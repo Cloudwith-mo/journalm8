@@ -9,6 +9,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# build artifacts
+*.zip
+
 # macOS
 .DS_Store
 

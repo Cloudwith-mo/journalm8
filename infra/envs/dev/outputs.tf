@@ -32,3 +32,13 @@ output "ingestion_jobs_table_name" {
   value       = module.data.ingestion_jobs_table_name
   description = "Ingestion jobs DynamoDB table"
 }
+
+output "presign_lambda_function_name" {
+  value       = module.compute.presign_lambda_function_name
+  description = "Presign upload Lambda function name"
+}
+
+output "http_api_endpoint" {
+  value       = module.api.api_endpoint
+  description = "HTTP API base endpoint"
+}

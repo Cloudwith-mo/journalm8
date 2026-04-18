@@ -27,3 +27,9 @@ variable "owner" {
   type        = string
   default     = "mko"
 }
+
+variable "web_origins" {
+  description = "Allowed browser origins for local and app access"
+  type        = list(string)
+  default     = ["http://localhost:3000"]
+}
