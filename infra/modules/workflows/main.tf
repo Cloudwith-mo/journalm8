@@ -17,13 +17,32 @@ resource "aws_iam_role" "state_machine" {
   tags               = var.tags
 }
 
+data "aws_iam_policy_document" "state_machine_inline" {
+  statement {
+    sid    = "AllowInvokeOcrLambda"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction"
+    ]
+    resources = [
+      var.ocr_lambda_arn
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "state_machine" {
+  name   = "${var.project_name}-${var.environment}-journal-ingestion-sfn-inline"
+  role   = aws_iam_role.state_machine.id
+  policy = data.aws_iam_policy_document.state_machine_inline.json
+}
+
 resource "aws_sfn_state_machine" "journal_ingestion" {
   name     = "${var.project_name}-${var.environment}-journal-ingestion"
   role_arn = aws_iam_role.state_machine.arn
   type     = "STANDARD"
 
   definition = jsonencode({
-    Comment = "JournalM8 ingestion workflow skeleton"
+    Comment = "JournalM8 ingestion workflow with OCR"
     StartAt = "ValidateInput"
     States = {
       ValidateInput = {
@@ -35,48 +54,58 @@ resource "aws_sfn_state_machine" "journal_ingestion" {
               { Variable = "$.userId", IsPresent = true },
               { Variable = "$.entryId", IsPresent = true },
               { Variable = "$.bucket", IsPresent = true },
-              { Variable = "$.key", IsPresent = true }
+              { Variable = "$.key", IsPresent = true },
+              { Variable = "$.filename", IsPresent = true }
             ]
-            Next = "OCRPending"
+            Next = "OCRDocument"
           }
         ]
         Default = "InvalidInput"
       }
 
-      OCRPending = {
-        Type = "Pass"
-        Result = {
-          stage   = "OCR_PENDING"
-          message = "Textract step will be added in the next phase"
+      OCRDocument = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = var.ocr_lambda_arn
+          Payload = {
+            "jobId.$"    = "$.jobId"
+            "userId.$"   = "$.userId"
+            "entryId.$"  = "$.entryId"
+            "bucket.$"   = "$.bucket"
+            "key.$"      = "$.key"
+            "filename.$" = "$.filename"
+          }
         }
-        ResultPath = "$.ocr"
-        Next       = "CleanupPending"
-      }
-
-      CleanupPending = {
-        Type = "Pass"
-        Result = {
-          stage   = "CLEANUP_PENDING"
-          message = "Cleanup and normalization step will be added later"
-        }
-        ResultPath = "$.cleanup"
-        Next       = "IndexPending"
-      }
-
-      IndexPending = {
-        Type = "Pass"
-        Result = {
-          stage   = "INDEX_PENDING"
-          message = "Knowledge base sync step will be added later"
-        }
-        ResultPath = "$.index"
-        Next       = "Succeeded"
+        OutputPath = "$.Payload"
+        Retry = [
+          {
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "States.TaskFailed"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }
+        ]
+        Catch = [
+          {
+            ErrorEquals = ["States.ALL"]
+            ResultPath  = "$.error"
+            Next        = "Failed"
+          }
+        ]
+        Next = "Succeeded"
       }
 
       InvalidInput = {
         Type  = "Fail"
         Error = "InvalidInput"
         Cause = "Missing one or more required fields"
+      }
+
+      Failed = {
+        Type  = "Fail"
+        Error = "OCRFailed"
+        Cause = "OCR step failed"
       }
 
       Succeeded = {

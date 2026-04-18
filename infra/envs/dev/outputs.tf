@@ -43,6 +43,11 @@ output "start_ingestion_lambda_function_name" {
   description = "S3 starter Lambda function name"
 }
 
+output "ocr_lambda_function_name" {
+  value       = module.ocr.lambda_function_name
+  description = "OCR Lambda function name"
+}
+
 output "state_machine_arn" {
   value       = module.workflows.state_machine_arn
   description = "Step Functions state machine ARN"

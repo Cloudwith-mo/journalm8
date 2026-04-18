@@ -6,6 +6,10 @@ variable "environment" {
   type = string
 }
 
+variable "ocr_lambda_arn" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

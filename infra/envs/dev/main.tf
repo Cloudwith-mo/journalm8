@@ -19,6 +19,8 @@ locals {
   presign_lambda_zip_path           = "${abspath(path.root)}/presign_upload.zip"
   start_ingestion_lambda_source_dir = "${abspath(path.root)}/../../../services/ingestion/start_ingestion"
   start_ingestion_lambda_zip_path   = "${abspath(path.root)}/start_ingestion.zip"
+  ocr_lambda_source_dir             = "${abspath(path.root)}/../../../services/ingestion/ocr_document"
+  ocr_lambda_zip_path               = "${abspath(path.root)}/ocr_document.zip"
 }
 
 module "auth" {
@@ -47,12 +49,31 @@ module "data" {
   tags         = local.common_tags
 }
 
+module "ocr" {
+  source = "../../modules/ocr"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  raw_bucket_name            = module.storage.raw_bucket_name
+  raw_bucket_arn             = module.storage.raw_bucket_arn
+  processed_bucket_name      = module.storage.processed_bucket_name
+  processed_bucket_arn       = module.storage.processed_bucket_arn
+  ingestion_jobs_table_name  = module.data.ingestion_jobs_table_name
+  ingestion_jobs_table_arn   = module.data.ingestion_jobs_table_arn
+  journal_entries_table_name = module.data.journal_entries_table_name
+  journal_entries_table_arn  = module.data.journal_entries_table_arn
+  lambda_source_dir          = local.ocr_lambda_source_dir
+  lambda_zip_path            = local.ocr_lambda_zip_path
+  tags                       = local.common_tags
+}
+
 module "workflows" {
   source = "../../modules/workflows"
 
-  project_name = var.project_name
-  environment  = var.environment
-  tags         = local.common_tags
+  project_name   = var.project_name
+  environment    = var.environment
+  ocr_lambda_arn = module.ocr.lambda_function_arn
+  tags           = local.common_tags
 }
 
 module "compute" {
