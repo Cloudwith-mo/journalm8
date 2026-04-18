@@ -38,6 +38,16 @@ output "presign_lambda_function_name" {
   description = "Presign upload Lambda function name"
 }
 
+output "start_ingestion_lambda_function_name" {
+  value       = module.ingestion.lambda_function_name
+  description = "S3 starter Lambda function name"
+}
+
+output "state_machine_arn" {
+  value       = module.workflows.state_machine_arn
+  description = "Step Functions state machine ARN"
+}
+
 output "http_api_endpoint" {
   value       = module.api.api_endpoint
   description = "HTTP API base endpoint"
