@@ -30,6 +30,40 @@ variable "lambda_invoke_arn" {
   type = string
 }
 
+variable "ask_lambda_function_name" {
+  type    = string
+  default = ""  # Optional for Phase A
+}
+
+variable "ask_lambda_invoke_arn" {
+  type    = string
+  default = ""  # Optional for Phase A
+}
+
+variable "list_entries_lambda_function_name" {
+  type = string
+}
+
+variable "list_entries_lambda_invoke_arn" {
+  type = string
+}
+
+variable "get_entry_lambda_function_name" {
+  type = string
+}
+
+variable "get_entry_lambda_invoke_arn" {
+  type = string
+}
+
+variable "update_transcript_lambda_function_name" {
+  type = string
+}
+
+variable "update_transcript_lambda_invoke_arn" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

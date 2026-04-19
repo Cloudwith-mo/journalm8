@@ -6,6 +6,9 @@ from typing import Any, Dict, List
 import boto3
 from botocore.exceptions import ClientError
 
+from text_processor import process_ocr_text
+from image_preprocessor import preprocess_image, should_preprocess
+
 s3 = boto3.client("s3")
 textract = boto3.client("textract")
 dynamodb = boto3.resource("dynamodb")
@@ -60,12 +63,14 @@ def _put_processed_objects(
     user_id: str,
     entry_id: str,
     textract_response: Dict[str, Any],
-    clean_text: str,
+    raw_text: str,
+    corrected_text: str,
     metadata: Dict[str, Any],
 ) -> Dict[str, str]:
     prefix = f"users/{user_id}/processed/{entry_id}"
     ocr_json_key = f"{prefix}/ocr.json"
-    clean_text_key = f"{prefix}/clean.txt"
+    raw_text_key = f"{prefix}/raw.txt"
+    corrected_text_key = f"{prefix}/corrected.txt"
     metadata_key = f"{prefix}/metadata.json"
 
     s3.put_object(
@@ -77,8 +82,15 @@ def _put_processed_objects(
 
     s3.put_object(
         Bucket=PROCESSED_BUCKET_NAME,
-        Key=clean_text_key,
-        Body=clean_text.encode("utf-8"),
+        Key=raw_text_key,
+        Body=raw_text.encode("utf-8"),
+        ContentType="text/plain; charset=utf-8",
+    )
+
+    s3.put_object(
+        Bucket=PROCESSED_BUCKET_NAME,
+        Key=corrected_text_key,
+        Body=corrected_text.encode("utf-8"),
         ContentType="text/plain; charset=utf-8",
     )
 
@@ -91,7 +103,8 @@ def _put_processed_objects(
 
     return {
         "ocrJsonKey": ocr_json_key,
-        "cleanTextKey": clean_text_key,
+        "rawTextKey": raw_text_key,
+        "correctedTextKey": corrected_text_key,
         "metadataKey": metadata_key,
     }
 
@@ -101,6 +114,7 @@ def _update_job_success(
     processed_keys: Dict[str, str],
     stats: Dict[str, Any],
     page_count: int,
+    review_status: str,
 ) -> None:
     jobs_table.update_item(
         Key={"jobId": job_id},
@@ -108,10 +122,10 @@ def _update_job_success(
         UpdateExpression=(
             "SET #status = :status, completedAt = :completedAt, "
             "processedBucket = :processedBucket, "
-            "ocrJsonKey = :ocrJsonKey, cleanTextKey = :cleanTextKey, metadataKey = :metadataKey, "
+            "ocrJsonKey = :ocrJsonKey, rawTextKey = :rawTextKey, correctedTextKey = :correctedTextKey, metadataKey = :metadataKey, "
             "ocrConfidence = :ocrConfidence, lineCount = :lineCount, "
             "handwritingLineCount = :handwritingLineCount, printedLineCount = :printedLineCount, "
-            "pageCount = :pageCount"
+            "pageCount = :pageCount, reviewStatus = :reviewStatus"
         ),
         ExpressionAttributeNames={"#status": "status"},
         ExpressionAttributeValues={
@@ -119,13 +133,15 @@ def _update_job_success(
             ":completedAt": _now_iso(),
             ":processedBucket": PROCESSED_BUCKET_NAME,
             ":ocrJsonKey": processed_keys["ocrJsonKey"],
-            ":cleanTextKey": processed_keys["cleanTextKey"],
+            ":rawTextKey": processed_keys["rawTextKey"],
+            ":correctedTextKey": processed_keys["correctedTextKey"],
             ":metadataKey": processed_keys["metadataKey"],
             ":ocrConfidence": str(stats["avgLineConfidence"]),
             ":lineCount": stats["lineCount"],
             ":handwritingLineCount": stats["handwritingLineCount"],
             ":printedLineCount": stats["printedLineCount"],
             ":pageCount": page_count,
+            ":reviewStatus": review_status,
         },
     )
 
@@ -156,6 +172,7 @@ def _put_journal_entry(
     processed_keys: Dict[str, str],
     stats: Dict[str, Any],
     page_count: int,
+    review_status: str,
 ) -> None:
     now = _now_iso()
 
@@ -170,14 +187,17 @@ def _put_journal_entry(
             "sourceKey": source_key,
             "processedBucket": PROCESSED_BUCKET_NAME,
             "ocrJsonKey": processed_keys["ocrJsonKey"],
-            "cleanTextKey": processed_keys["cleanTextKey"],
+            "rawTextKey": processed_keys["rawTextKey"],
+            "correctedTextKey": processed_keys["correctedTextKey"],
             "metadataKey": processed_keys["metadataKey"],
             "status": "OCR_COMPLETE",
+            "reviewStatus": review_status,
             "ocrConfidence": str(stats["avgLineConfidence"]),
             "lineCount": stats["lineCount"],
             "handwritingLineCount": stats["handwritingLineCount"],
             "printedLineCount": stats["printedLineCount"],
             "pageCount": page_count,
+            "correctionCount": 0,
             "createdAt": now,
             "updatedAt": now,
         }
@@ -195,20 +215,36 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     filename = event["filename"]
 
     try:
+        # Step 1: Download and preprocess image if applicable
+        s3_obj = s3.get_object(Bucket=bucket, Key=key)
+        image_bytes = s3_obj['Body'].read()
+        content_type = s3_obj.get('ContentType', 'image/jpeg')
+        
+        if should_preprocess(content_type):
+            print(f"Preprocessing image: {filename}")
+            image_bytes = preprocess_image(image_bytes)
+        
+        # Step 2: Run OCR on (possibly preprocessed) image
         response = textract.detect_document_text(
-            Document={
-                "S3Object": {
-                    "Bucket": bucket,
-                    "Name": key,
-                }
-            }
+            Document={"Bytes": image_bytes}
         )
 
+        # Step 3: Extract text and stats
         blocks = response.get("Blocks", [])
         lines = _extract_lines(blocks)
-        clean_text = _build_clean_text(lines)
+        raw_text = _build_clean_text(lines)
         stats = _line_stats(lines)
         page_count = response.get("DocumentMetadata", {}).get("Pages", 1)
+        
+        # Step 4: Post-process OCR text
+        processed = process_ocr_text(
+            raw_text=raw_text,
+            confidence=stats["avgLineConfidence"],
+            line_count=stats["lineCount"],
+        )
+        
+        now_iso = _now_iso()
+        year_month = now_iso[:7]  # YYYY-MM format
 
         metadata = {
             "jobId": job_id,
@@ -219,15 +255,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "sourceKey": key,
             "processedBucket": PROCESSED_BUCKET_NAME,
             "pageCount": page_count,
+            "yearMonth": year_month,
+            "ocrConfidence": stats["avgLineConfidence"],
+            "reviewStatus": processed["reviewStatus"],
+            "fixesApplied": processed["fixesApplied"],
+            "fixCount": processed["fixCount"],
             **stats,
-            "processedAt": _now_iso(),
+            "processedAt": now_iso,
         }
 
         processed_keys = _put_processed_objects(
             user_id=user_id,
             entry_id=entry_id,
             textract_response=response,
-            clean_text=clean_text,
+            raw_text=processed["rawText"],
+            corrected_text=processed["correctedText"],
             metadata=metadata,
         )
 
@@ -236,6 +278,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             processed_keys=processed_keys,
             stats=stats,
             page_count=page_count,
+            review_status=processed["reviewStatus"],
         )
 
         _put_journal_entry(
@@ -247,6 +290,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             processed_keys=processed_keys,
             stats=stats,
             page_count=page_count,
+            review_status=processed["reviewStatus"],
         )
 
         return {
@@ -258,9 +302,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "sourceKey": key,
             "processedBucket": PROCESSED_BUCKET_NAME,
             "ocrJsonKey": processed_keys["ocrJsonKey"],
-            "cleanTextKey": processed_keys["cleanTextKey"],
+            "rawTextKey": processed_keys["rawTextKey"],
+            "correctedTextKey": processed_keys["correctedTextKey"],
             "metadataKey": processed_keys["metadataKey"],
             "pageCount": page_count,
+            "reviewStatus": processed["reviewStatus"],
             **stats,
             "status": "OCR_COMPLETE",
         }

@@ -4,6 +4,21 @@ data "archive_file" "ocr_document" {
   output_path = var.lambda_zip_path
 }
 
+# Pillow Lambda Layer for image preprocessing
+# Pre-built using build_pillow_layer.sh script with explicit cp313 targeting
+# All wheels are cpython-313-x86_64-linux-gnu (verified Python 3.13 compatible)
+resource "aws_lambda_layer_version" "pillow" {
+  filename            = "${path.module}/pillow_layer.zip"
+  layer_name          = "${var.project_name}-pillow-linux"
+  compatible_runtimes = ["python3.13"]
+  description         = "Pillow library (Python 3.13 cp313 wheels) for image preprocessing in OCR Lambda"
+  source_code_hash    = filebase64sha256("${path.module}/pillow_layer.zip")
+
+  lifecycle {
+    ignore_changes = [source_code_hash]
+  }
+}
+
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
     effect = "Allow"
@@ -97,7 +112,7 @@ resource "aws_iam_role_policy" "ocr_document" {
 
 resource "aws_cloudwatch_log_group" "ocr_document" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-document"
-  retention_in_days = 14
+  retention_in_days = 7
   tags              = var.tags
 }
 
@@ -114,6 +129,10 @@ resource "aws_lambda_function" "ocr_document" {
   memory_size = 512
   publish     = false
 
+  layers = [
+    aws_lambda_layer_version.pillow.arn
+  ]
+
   environment {
     variables = {
       PROCESSED_BUCKET_NAME      = var.processed_bucket_name
@@ -123,7 +142,8 @@ resource "aws_lambda_function" "ocr_document" {
   }
 
   depends_on = [
-    aws_cloudwatch_log_group.ocr_document
+    aws_cloudwatch_log_group.ocr_document,
+    aws_lambda_layer_version.pillow
   ]
 
   tags = var.tags
