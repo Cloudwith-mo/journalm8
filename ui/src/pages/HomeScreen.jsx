@@ -55,7 +55,7 @@ export function HomeScreen({ onUpload, onSelectEntry }) {
           </div>
           <div className="bg-gray-800 p-4 rounded">
             <div className="text-2xl font-bold text-green-400">
-              {entries.filter((e) => e.status === "OCR_COMPLETE" || e.status === "REVIEWED").length}
+              {entries.filter((e) => e.reviewStatus === "REVIEWED" || e.status === "OCR_COMPLETE").length}
             </div>
             <div className="text-gray-400 text-sm">Processed</div>
           </div>
@@ -102,7 +102,7 @@ export function HomeScreen({ onUpload, onSelectEntry }) {
               >
                 <div className="font-medium">{entry.date || new Date().toLocaleDateString()}</div>
                 <div className="text-gray-400 text-sm">
-                  {entry.status === "OCR_COMPLETE" || entry.status === "REVIEWED"
+                  {entry.reviewStatus === "REVIEWED" || entry.status === "OCR_COMPLETE"
                     ? "✓ Processed"
                     : "⏳ Processing..."}
                 </div>

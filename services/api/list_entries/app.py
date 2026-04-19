@@ -59,6 +59,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             formatted_entries.append({
                 "entryId": item.get("sk", "").replace("ENTRY#", ""),
                 "status": item.get("status", "processing"),
+                "reviewStatus": item.get("reviewStatus"),
                 "rawText": item.get("rawText", ""),
                 "correctedText": item.get("correctedText"),
                 "createdAt": item.get("createdAt"),
