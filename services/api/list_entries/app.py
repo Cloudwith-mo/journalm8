@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any, Dict
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")
 
@@ -44,11 +45,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not user_sub:
             return _response(401, {"message": "Unauthorized: missing user identity"})
 
-        # Query DynamoDB for all entries for this user (pk = user_sub)
+        # Query only ENTRY# items — excludes INSIGHT#, REFLECTION#, etc.
         response = entries_table.query(
-            KeyConditionExpression="pk = :user_sub",
-            ExpressionAttributeValues={":user_sub": f"USER#{user_sub}"},
-            ScanIndexForward=False,  # Sort by sk (timestamp) descending
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_sub}") & Key("sk").begins_with("ENTRY#"),
+            ScanIndexForward=False,  # Sort by sk descending
         )
 
         entries = response.get("Items", [])
@@ -60,10 +60,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "entryId": item.get("sk", "").replace("ENTRY#", ""),
                 "status": item.get("status", "processing"),
                 "reviewStatus": item.get("reviewStatus"),
+                "aiStatus": item.get("aiStatus"),
                 "rawText": item.get("rawText", ""),
                 "correctedText": item.get("correctedText"),
                 "createdAt": item.get("createdAt"),
                 "updatedAt": item.get("updatedAt"),
+                "lastAnalyzedAt": item.get("lastAnalyzedAt"),
             })
 
         return _response(200, {"entries": formatted_entries})

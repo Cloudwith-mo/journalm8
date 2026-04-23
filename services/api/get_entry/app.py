@@ -91,10 +91,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "entryId": item.get("sk", "").replace("ENTRY#", ""),
             "status": item.get("status", "processing"),
             "reviewStatus": item.get("reviewStatus"),
+            "aiStatus": item.get("aiStatus"),
             "rawText": raw_text,
             "correctedText": corrected_text,
             "createdAt": item.get("createdAt"),
             "updatedAt": item.get("updatedAt"),
+            "lastAnalyzedAt": item.get("lastAnalyzedAt"),
         }
 
         return _response(200, formatted_entry)
