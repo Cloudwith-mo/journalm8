@@ -20,24 +20,24 @@ entries_table = dynamodb.Table(JOURNAL_ENTRIES_TABLE_NAME)
 ENTRY_INSIGHT_PROMPT = """You are a personal journal analyst. Analyse the journal entry below and return ONLY a valid JSON object — no markdown, no explanation, no code fences.
 
 The JSON must follow this exact schema:
-{
+{{
   "summary": "One or two sentence summary of the entry.",
-  "mood": {
+  "mood": {{
     "primary": "single dominant mood word",
     "secondary": ["optional", "additional", "mood", "words"],
     "confidence": 0.0
-  },
+  }},
   "themes": ["theme1", "theme2"],
-  "sentiment": {
+  "sentiment": {{
     "score": 0.0,
     "label": "positive | negative | mixed | mixed-positive | mixed-negative | neutral"
-  },
+  }},
   "keyInsights": ["insight 1", "insight 2"],
   "actionItems": ["action 1"],
   "identitySignals": ["signal 1"],
   "patternsToWatch": ["pattern 1"],
   "reflectionQuestions": ["question 1", "question 2"]
-}
+}}
 
 Rules:
 - sentiment.score is a float between -1.0 (very negative) and 1.0 (very positive)
