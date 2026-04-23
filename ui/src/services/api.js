@@ -181,4 +181,49 @@ export const entriesService = {
       throw error;
     }
   },
+
+  async getEntryInsight(entryId) {
+    try {
+      const token = authService.getToken();
+      const response = await fetch(`${API_ENDPOINT}/entries/${entryId}/insight`, {
+        method: "GET",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!response.ok) throw new Error("Insight not found");
+      return await response.json();
+    } catch (error) {
+      console.error("getEntryInsight error:", error);
+      throw error;
+    }
+  },
+};
+
+export const agentsService = {
+  async runWeeklyReflection(weekStart, weekEnd) {
+    try {
+      const token = authService.getToken();
+      const body = {};
+      if (weekStart) body.weekStart = weekStart;
+      if (weekEnd) body.weekEnd = weekEnd;
+      const response = await fetch(`${API_ENDPOINT}/agents/weekly-reflection/run`, {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || "Weekly reflection failed");
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("runWeeklyReflection error:", error);
+      throw error;
+    }
+  },
 };

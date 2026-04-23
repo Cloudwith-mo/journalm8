@@ -33,3 +33,19 @@ output "update_transcript_lambda_function_name" {
 output "update_transcript_lambda_invoke_arn" {
   value = aws_lambda_function.update_transcript.invoke_arn
 }
+
+output "get_insight_lambda_function_name" {
+  value = aws_lambda_function.get_insight.function_name
+}
+
+output "get_insight_lambda_invoke_arn" {
+  value = aws_lambda_function.get_insight.invoke_arn
+}
+
+output "weekly_reflection_lambda_function_name" {
+  value = aws_lambda_function.weekly_reflection.function_name
+}
+
+output "weekly_reflection_lambda_invoke_arn" {
+  value = aws_lambda_function.weekly_reflection.invoke_arn
+}

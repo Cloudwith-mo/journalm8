@@ -23,6 +23,12 @@ locals {
   get_entry_lambda_zip_path         = "${abspath(path.root)}/get_entry.zip"
   update_transcript_lambda_source_dir = "${abspath(path.root)}/../../../services/api/update_transcript"
   update_transcript_lambda_zip_path = "${abspath(path.root)}/update_transcript.zip"
+  enrich_entry_lambda_source_dir    = "${abspath(path.root)}/../../../services/ai/enrich_entry"
+  enrich_entry_lambda_zip_path      = "${abspath(path.root)}/enrich_entry.zip"
+  get_insight_lambda_source_dir     = "${abspath(path.root)}/../../../services/api/get_insight"
+  get_insight_lambda_zip_path       = "${abspath(path.root)}/get_insight.zip"
+  weekly_reflection_lambda_source_dir = "${abspath(path.root)}/../../../services/agents/weekly_reflection"
+  weekly_reflection_lambda_zip_path = "${abspath(path.root)}/weekly_reflection.zip"
   start_ingestion_lambda_source_dir = "${abspath(path.root)}/../../../services/ingestion/start_ingestion"
   start_ingestion_lambda_zip_path   = "${abspath(path.root)}/start_ingestion.zip"
   ocr_lambda_source_dir             = "${abspath(path.root)}/../../../services/ingestion/ocr_document"
@@ -102,6 +108,12 @@ module "compute" {
   get_entry_lambda_zip_path = local.get_entry_lambda_zip_path
   update_transcript_lambda_source_dir = local.update_transcript_lambda_source_dir
   update_transcript_lambda_zip_path = local.update_transcript_lambda_zip_path
+  enrich_entry_lambda_source_dir    = local.enrich_entry_lambda_source_dir
+  enrich_entry_lambda_zip_path      = local.enrich_entry_lambda_zip_path
+  get_insight_lambda_source_dir     = local.get_insight_lambda_source_dir
+  get_insight_lambda_zip_path       = local.get_insight_lambda_zip_path
+  weekly_reflection_lambda_source_dir = local.weekly_reflection_lambda_source_dir
+  weekly_reflection_lambda_zip_path = local.weekly_reflection_lambda_zip_path
   tags              = local.common_tags
 }
 
@@ -180,6 +192,10 @@ module "api" {
   get_entry_lambda_invoke_arn = module.compute.get_entry_lambda_invoke_arn
   update_transcript_lambda_function_name = module.compute.update_transcript_lambda_function_name
   update_transcript_lambda_invoke_arn = module.compute.update_transcript_lambda_invoke_arn
+  get_insight_lambda_function_name    = module.compute.get_insight_lambda_function_name
+  get_insight_lambda_invoke_arn       = module.compute.get_insight_lambda_invoke_arn
+  weekly_reflection_lambda_function_name = module.compute.weekly_reflection_lambda_function_name
+  weekly_reflection_lambda_invoke_arn = module.compute.weekly_reflection_lambda_invoke_arn
   # Phase B: Ask endpoint (temporarily disabled)
   # ask_lambda_function_name    = module.ask.lambda_function_name
   # ask_lambda_invoke_arn       = module.ask.lambda_invoke_arn

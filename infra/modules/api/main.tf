@@ -160,3 +160,53 @@ resource "aws_lambda_permission" "allow_api_gateway_update_transcript" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
+
+# ========== GET_INSIGHT Route ==========
+resource "aws_apigatewayv2_integration" "get_insight" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = var.get_insight_lambda_invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+}
+
+resource "aws_apigatewayv2_route" "get_insight" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /entries/{entryId}/insight"
+  target             = "integrations/${aws_apigatewayv2_integration.get_insight.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+resource "aws_lambda_permission" "allow_api_gateway_get_insight" {
+  statement_id  = "AllowExecutionFromApiGatewayGetInsight"
+  action        = "lambda:InvokeFunction"
+  function_name = var.get_insight_lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}
+
+# ========== WEEKLY_REFLECTION Route ==========
+resource "aws_apigatewayv2_integration" "weekly_reflection" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = var.weekly_reflection_lambda_invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 29000
+}
+
+resource "aws_apigatewayv2_route" "weekly_reflection" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "POST /agents/weekly-reflection/run"
+  target             = "integrations/${aws_apigatewayv2_integration.weekly_reflection.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+resource "aws_lambda_permission" "allow_api_gateway_weekly_reflection" {
+  statement_id  = "AllowExecutionFromApiGatewayWeeklyReflection"
+  action        = "lambda:InvokeFunction"
+  function_name = var.weekly_reflection_lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}

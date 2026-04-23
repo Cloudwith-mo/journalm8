@@ -64,6 +64,22 @@ variable "update_transcript_lambda_invoke_arn" {
   type = string
 }
 
+variable "get_insight_lambda_function_name" {
+  type = string
+}
+
+variable "get_insight_lambda_invoke_arn" {
+  type = string
+}
+
+variable "weekly_reflection_lambda_function_name" {
+  type = string
+}
+
+variable "weekly_reflection_lambda_invoke_arn" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

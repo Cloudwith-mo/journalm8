@@ -8,10 +8,12 @@ import boto3
 from botocore.exceptions import ClientError
 
 s3 = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 dynamodb = boto3.resource("dynamodb")
 
 PROCESSED_BUCKET_NAME = os.environ["PROCESSED_BUCKET_NAME"]
 JOURNAL_ENTRIES_TABLE_NAME = os.environ["JOURNAL_ENTRIES_TABLE_NAME"]
+ENRICH_ENTRY_FUNCTION_NAME = os.environ.get("ENRICH_ENTRY_FUNCTION_NAME", "")
 
 entries_table = dynamodb.Table(JOURNAL_ENTRIES_TABLE_NAME)
 
@@ -96,16 +98,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         entries_table.update_item(
             Key={"pk": f"USER#{user_sub}", "sk": f"ENTRY#{entry_id}"},
             UpdateExpression=(
-                "SET reviewStatus = :status, correctionCount = :count, "
+                "SET reviewStatus = :status, aiStatus = :aiStatus, correctionCount = :count, "
                 "lastCorrectedAt = :correctedAt, updatedAt = :updatedAt"
             ),
             ExpressionAttributeValues={
                 ":status": "REVIEWED",
+                ":aiStatus": "QUEUED",
                 ":count": correction_count,
                 ":correctedAt": now,
                 ":updatedAt": now,
             },
         )
+
+        # Async-invoke enrich_entry Lambda (fire-and-forget)
+        if ENRICH_ENTRY_FUNCTION_NAME:
+            try:
+                lambda_client.invoke(
+                    FunctionName=ENRICH_ENTRY_FUNCTION_NAME,
+                    InvocationType="Event",  # async, does not wait
+                    Payload=json.dumps({"userSub": user_sub, "entryId": entry_id}),
+                )
+                print(f"INFO: Queued enrichment for entry {entry_id}")
+            except Exception as exc:
+                # Non-fatal: save succeeded, enrichment can be retried
+                print(f"WARN: Could not invoke enrich_entry: {exc}")
 
         return _response(
             200,
@@ -113,6 +129,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Transcript updated successfully",
                 "entryId": entry_id,
                 "reviewStatus": "REVIEWED",
+                "aiStatus": "QUEUED",
                 "correctionCount": correction_count,
             },
         )

@@ -55,6 +55,30 @@ variable "update_transcript_lambda_zip_path" {
   type = string
 }
 
+variable "enrich_entry_lambda_source_dir" {
+  type = string
+}
+
+variable "enrich_entry_lambda_zip_path" {
+  type = string
+}
+
+variable "get_insight_lambda_source_dir" {
+  type = string
+}
+
+variable "get_insight_lambda_zip_path" {
+  type = string
+}
+
+variable "weekly_reflection_lambda_source_dir" {
+  type = string
+}
+
+variable "weekly_reflection_lambda_zip_path" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

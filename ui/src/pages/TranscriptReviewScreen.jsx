@@ -4,7 +4,7 @@ import { entriesService } from "../services/api";
 export function TranscriptReviewScreen({ entry, onSave, onBack }) {
   const [rawText, setRawText] = useState(entry?.rawText || "");
   const [correctedText, setCorrectedText] = useState(
-    entry?.correctedText || ""
+    entry?.correctedText || entry?.rawText || ""
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
