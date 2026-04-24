@@ -110,7 +110,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     if not text_to_analyse:
         print(f"ERROR: No transcript text available for entry {entry_id}")
-        _mark_failed(user_sub, entry_id)
+        _mark_failed(user_sub, entry_id, "NoTranscript", "No transcript text available")
         return {"statusCode": 422, "message": "No transcript text to analyse"}
 
     # ── 4. Call Bedrock ───────────────────────────────────────────────────────
@@ -130,9 +130,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         response_body = json.loads(bedrock_response["body"].read())
         raw_text = response_body["content"][0]["text"].strip()
     except Exception as e:
+        error_str = str(e)
         print(f"ERROR: Bedrock invocation failed: {e}")
-        _mark_failed(user_sub, entry_id)
-        return {"statusCode": 500, "message": f"Bedrock error: {str(e)}"}
+        error_code = type(e).__name__
+        # Extract the Botocore error code if available
+        if hasattr(e, "response"):
+            error_code = e.response.get("Error", {}).get("Code", error_code)
+        if "ThrottlingException" in error_str or "TooManyRequests" in error_str:
+            _mark_throttled(user_sub, entry_id, error_code, error_str[:200])
+        else:
+            _mark_failed(user_sub, entry_id, error_code, error_str[:200])
+        return {"statusCode": 500, "message": f"Bedrock error: {error_str}"}
 
     # ── 5. Parse JSON from model output ───────────────────────────────────────
     try:
@@ -144,7 +152,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         insight = json.loads(raw_text)
     except json.JSONDecodeError as e:
         print(f"ERROR: Could not parse Bedrock JSON response: {e}\nRaw: {raw_text[:500]}")
-        _mark_failed(user_sub, entry_id)
+        _mark_failed(user_sub, entry_id, "JSONDecodeError", str(e)[:200])
         return {"statusCode": 500, "message": "Invalid JSON from model"}
 
     # ── 6. Store INSIGHT item in DynamoDB ─────────────────────────────────────
@@ -189,12 +197,33 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return {"statusCode": 200, "entryId": entry_id, "aiStatus": "COMPLETE"}
 
 
-def _mark_failed(user_sub: str, entry_id: str) -> None:
+def _mark_throttled(user_sub: str, entry_id: str, error_code: str, error_msg: str) -> None:
     try:
         entries_table.update_item(
             Key={"pk": f"USER#{user_sub}", "sk": f"ENTRY#{entry_id}"},
-            UpdateExpression="SET aiStatus = :s",
-            ExpressionAttributeValues={":s": "FAILED"},
+            UpdateExpression="SET aiStatus = :s, aiErrorCode = :c, aiErrorMessage = :m, lastAiAttemptAt = :t",
+            ExpressionAttributeValues={
+                ":s": "THROTTLED",
+                ":c": error_code,
+                ":m": error_msg,
+                ":t": _now_iso(),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _mark_failed(user_sub: str, entry_id: str, error_code: str = "UnknownError", error_msg: str = "") -> None:
+    try:
+        entries_table.update_item(
+            Key={"pk": f"USER#{user_sub}", "sk": f"ENTRY#{entry_id}"},
+            UpdateExpression="SET aiStatus = :s, aiErrorCode = :c, aiErrorMessage = :m, lastAiAttemptAt = :t",
+            ExpressionAttributeValues={
+                ":s": "FAILED",
+                ":c": error_code,
+                ":m": error_msg,
+                ":t": _now_iso(),
+            },
         )
     except Exception:
         pass

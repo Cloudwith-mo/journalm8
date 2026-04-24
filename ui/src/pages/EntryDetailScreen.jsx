@@ -96,6 +96,7 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
   useEffect(() => {
     if (!entry) return;
     if (entry.aiStatus !== "QUEUED" && entry.aiStatus !== "ENRICHING") return;
+    // Note: THROTTLED and FAILED are terminal — user must click retry
 
     const aiPoll = setInterval(async () => {
       try {
@@ -104,7 +105,11 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
         if (data.aiStatus === "COMPLETE") {
           clearInterval(aiPoll);
           loadInsight();
-        } else if (data.aiStatus === "FAILED" || (data.aiStatus !== "QUEUED" && data.aiStatus !== "ENRICHING")) {
+        } else if (
+          data.aiStatus === "FAILED" ||
+          data.aiStatus === "THROTTLED" ||
+          (data.aiStatus !== "QUEUED" && data.aiStatus !== "ENRICHING")
+        ) {
           clearInterval(aiPoll);
         }
       } catch (err) {
@@ -120,6 +125,8 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
       ? null
       : entry?.aiStatus === "QUEUED" || entry?.aiStatus === "ENRICHING"
       ? "✦ AI analysis in progress..."
+      : entry?.aiStatus === "THROTTLED"
+      ? "✦ AI busy — quota limit reached, retry later"
       : entry?.aiStatus === "FAILED"
       ? "✦ AI analysis failed"
       : null;
@@ -194,7 +201,7 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
               </p>
             )}
 
-            {entry?.aiStatus === "FAILED" && (
+            {(entry?.aiStatus === "FAILED" || entry?.aiStatus === "THROTTLED") && (
               <button
                 onClick={handleRetry}
                 disabled={retrying}
