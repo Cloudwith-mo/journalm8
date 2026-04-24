@@ -61,8 +61,18 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
   const [insight, setInsight] = useState(null);
   const [retrying, setRetrying] = useState(false);
 
+  // Fetch insight and update state
+  const loadInsight = async () => {
+    try {
+      const ins = await entriesService.getEntryInsight(entryId);
+      setInsight(ins);
+    } catch (e) {
+      console.warn("No insight yet:", e);
+    }
+  };
+
+  // Poll until OCR is done — stops once entry is ready to display
   useEffect(() => {
-    // Poll for entry status
     const poll = setInterval(async () => {
       try {
         const data = await entriesService.getEntry(entryId);
@@ -70,14 +80,8 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
         if (data.status === "OCR_COMPLETE" || data.reviewStatus === "REVIEWED") {
           setStatus("ready");
           clearInterval(poll);
-          // Fetch AI insight if available
           if (data.aiStatus === "COMPLETE") {
-            try {
-              const ins = await entriesService.getEntryInsight(entryId);
-              setInsight(ins);
-            } catch (e) {
-              console.warn("No insight yet:", e);
-            }
+            loadInsight();
           }
         }
       } catch (err) {
@@ -87,6 +91,29 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
 
     return () => clearInterval(poll);
   }, [entryId]);
+
+  // Poll AI status whenever QUEUED or ENRICHING — independent of OCR polling
+  useEffect(() => {
+    if (!entry) return;
+    if (entry.aiStatus !== "QUEUED" && entry.aiStatus !== "ENRICHING") return;
+
+    const aiPoll = setInterval(async () => {
+      try {
+        const data = await entriesService.getEntry(entryId);
+        setEntry(data);
+        if (data.aiStatus === "COMPLETE") {
+          clearInterval(aiPoll);
+          loadInsight();
+        } else if (data.aiStatus === "FAILED" || (data.aiStatus !== "QUEUED" && data.aiStatus !== "ENRICHING")) {
+          clearInterval(aiPoll);
+        }
+      } catch (err) {
+        console.error("AI status poll failed:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(aiPoll);
+  }, [entry?.aiStatus]);
 
   const aiStatusLabel =
     entry?.aiStatus === "COMPLETE"
