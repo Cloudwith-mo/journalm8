@@ -596,3 +596,86 @@ resource "aws_lambda_function" "weekly_reflection" {
 
   tags = var.tags
 }
+
+# ========== RETRY_ENRICH Lambda ==========
+data "archive_file" "retry_enrich" {
+  type        = "zip"
+  source_dir  = var.retry_enrich_lambda_source_dir
+  output_path = var.retry_enrich_lambda_zip_path
+}
+
+resource "aws_iam_role" "retry_enrich" {
+  name               = "${var.project_name}-${var.environment}-retry-enrich-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "retry_enrich_inline" {
+  statement {
+    sid    = "AllowCloudWatchLogs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["arn:aws:logs:*:*:*"]
+  }
+
+  statement {
+    sid    = "AllowDynamoDB"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem"
+    ]
+    resources = [
+      "arn:aws:dynamodb:*:*:table/${var.journal_entries_table_name}"
+    ]
+  }
+
+  statement {
+    sid    = "AllowInvokeEnrichEntry"
+    effect = "Allow"
+    actions = ["lambda:InvokeFunction"]
+    resources = ["arn:aws:lambda:*:*:function:${var.project_name}-${var.environment}-enrich-entry"]
+  }
+}
+
+resource "aws_iam_role_policy" "retry_enrich" {
+  name   = "${var.project_name}-${var.environment}-retry-enrich-inline"
+  role   = aws_iam_role.retry_enrich.id
+  policy = data.aws_iam_policy_document.retry_enrich_inline.json
+}
+
+resource "aws_cloudwatch_log_group" "retry_enrich" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-retry-enrich"
+  retention_in_days = 14
+  tags              = var.tags
+}
+
+resource "aws_lambda_function" "retry_enrich" {
+  function_name    = "${var.project_name}-${var.environment}-retry-enrich"
+  role             = aws_iam_role.retry_enrich.arn
+  handler          = "app.lambda_handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.retry_enrich.output_path
+  source_code_hash = data.archive_file.retry_enrich.output_base64sha256
+
+  timeout     = 10
+  memory_size = 256
+  publish     = false
+
+  environment {
+    variables = {
+      JOURNAL_ENTRIES_TABLE_NAME = var.journal_entries_table_name
+      ENRICH_ENTRY_FUNCTION_NAME = "${var.project_name}-${var.environment}-enrich-entry"
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.retry_enrich
+  ]
+
+  tags = var.tags
+}

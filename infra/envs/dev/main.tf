@@ -29,6 +29,8 @@ locals {
   get_insight_lambda_zip_path       = "${abspath(path.root)}/get_insight.zip"
   weekly_reflection_lambda_source_dir = "${abspath(path.root)}/../../../services/agents/weekly_reflection"
   weekly_reflection_lambda_zip_path = "${abspath(path.root)}/weekly_reflection.zip"
+  retry_enrich_lambda_source_dir    = "${abspath(path.root)}/../../../services/api/retry_enrich"
+  retry_enrich_lambda_zip_path      = "${abspath(path.root)}/retry_enrich.zip"
   start_ingestion_lambda_source_dir = "${abspath(path.root)}/../../../services/ingestion/start_ingestion"
   start_ingestion_lambda_zip_path   = "${abspath(path.root)}/start_ingestion.zip"
   ocr_lambda_source_dir             = "${abspath(path.root)}/../../../services/ingestion/ocr_document"
@@ -114,6 +116,8 @@ module "compute" {
   get_insight_lambda_zip_path       = local.get_insight_lambda_zip_path
   weekly_reflection_lambda_source_dir = local.weekly_reflection_lambda_source_dir
   weekly_reflection_lambda_zip_path = local.weekly_reflection_lambda_zip_path
+  retry_enrich_lambda_source_dir    = local.retry_enrich_lambda_source_dir
+  retry_enrich_lambda_zip_path      = local.retry_enrich_lambda_zip_path
   tags              = local.common_tags
 }
 
@@ -196,6 +200,8 @@ module "api" {
   get_insight_lambda_invoke_arn       = module.compute.get_insight_lambda_invoke_arn
   weekly_reflection_lambda_function_name = module.compute.weekly_reflection_lambda_function_name
   weekly_reflection_lambda_invoke_arn = module.compute.weekly_reflection_lambda_invoke_arn
+  retry_enrich_lambda_function_name   = module.compute.retry_enrich_lambda_function_name
+  retry_enrich_lambda_invoke_arn      = module.compute.retry_enrich_lambda_invoke_arn
   # Phase B: Ask endpoint (temporarily disabled)
   # ask_lambda_function_name    = module.ask.lambda_function_name
   # ask_lambda_invoke_arn       = module.ask.lambda_invoke_arn

@@ -49,3 +49,11 @@ output "weekly_reflection_lambda_function_name" {
 output "weekly_reflection_lambda_invoke_arn" {
   value = aws_lambda_function.weekly_reflection.invoke_arn
 }
+
+output "retry_enrich_lambda_function_name" {
+  value = aws_lambda_function.retry_enrich.function_name
+}
+
+output "retry_enrich_lambda_invoke_arn" {
+  value = aws_lambda_function.retry_enrich.invoke_arn
+}

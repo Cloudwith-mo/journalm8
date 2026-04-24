@@ -80,6 +80,14 @@ variable "weekly_reflection_lambda_invoke_arn" {
   type = string
 }
 
+variable "retry_enrich_lambda_function_name" {
+  type = string
+}
+
+variable "retry_enrich_lambda_invoke_arn" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

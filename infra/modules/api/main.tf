@@ -210,3 +210,28 @@ resource "aws_lambda_permission" "allow_api_gateway_weekly_reflection" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
+
+# ========== RETRY_ENRICH Route ==========
+resource "aws_apigatewayv2_integration" "retry_enrich" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = var.retry_enrich_lambda_invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 10000
+}
+
+resource "aws_apigatewayv2_route" "retry_enrich" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "POST /entries/{entryId}/enrich"
+  target             = "integrations/${aws_apigatewayv2_integration.retry_enrich.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+resource "aws_lambda_permission" "allow_api_gateway_retry_enrich" {
+  statement_id  = "AllowExecutionFromApiGatewayRetryEnrich"
+  action        = "lambda:InvokeFunction"
+  function_name = var.retry_enrich_lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}

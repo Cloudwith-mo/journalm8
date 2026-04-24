@@ -59,6 +59,7 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
   const [status, setStatus] = useState("processing");
   const [entry, setEntry] = useState(null);
   const [insight, setInsight] = useState(null);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     // Poll for entry status
@@ -89,10 +90,25 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
 
   const aiStatusLabel =
     entry?.aiStatus === "COMPLETE"
-      ? null // shown via AiInsightCard
+      ? null
       : entry?.aiStatus === "QUEUED" || entry?.aiStatus === "ENRICHING"
       ? "✦ AI analysis in progress..."
+      : entry?.aiStatus === "FAILED"
+      ? "✦ AI analysis failed"
       : null;
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await entriesService.retryEnrichment(entryId);
+      // Update local state to show Analyzing... immediately
+      setEntry((prev) => prev ? { ...prev, aiStatus: "QUEUED" } : prev);
+    } catch (e) {
+      console.error("Retry failed:", e);
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -146,7 +162,19 @@ export function EntryDetailScreen({ entryId, onReview, onBack }) {
             )}
 
             {aiStatusLabel && (
-              <p className="text-purple-400 text-sm text-center">{aiStatusLabel}</p>
+              <p className={`text-sm text-center ${entry?.aiStatus === "FAILED" ? "text-red-400" : "text-purple-400"}`}>
+                {aiStatusLabel}
+              </p>
+            )}
+
+            {entry?.aiStatus === "FAILED" && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white font-semibold py-2 rounded-lg text-sm"
+              >
+                {retrying ? "Queuing..." : "↺ Retry AI Analysis"}
+              </button>
             )}
 
             {insight && <AiInsightCard insight={insight} />}

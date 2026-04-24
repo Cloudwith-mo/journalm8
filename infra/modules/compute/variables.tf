@@ -79,6 +79,14 @@ variable "weekly_reflection_lambda_zip_path" {
   type = string
 }
 
+variable "retry_enrich_lambda_source_dir" {
+  type = string
+}
+
+variable "retry_enrich_lambda_zip_path" {
+  type = string
+}
+
 variable "tags" {
   type = map(string)
 }

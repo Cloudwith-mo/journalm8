@@ -186,6 +186,20 @@ export const entriesService = {
       throw error;
     }
   },
+
+  async retryEnrichment(entryId) {
+    try {
+      const response = await fetch(`${API_ENDPOINT}/entries/${entryId}/enrich`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!response.ok) throw new Error("Retry failed");
+      return await response.json();
+    } catch (error) {
+      console.error("retryEnrichment error:", error);
+      throw error;
+    }
+  },
 };
 
 export const agentsService = {

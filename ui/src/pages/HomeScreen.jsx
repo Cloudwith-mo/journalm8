@@ -11,6 +11,9 @@ function getEntryLabel(entry) {
   ) {
     return { text: "✓ Reviewed · Analyzing...", color: "text-blue-400" };
   }
+  if (entry.reviewStatus === "REVIEWED" && entry.aiStatus === "FAILED") {
+    return { text: "✓ Reviewed · AI failed — retry", color: "text-red-400" };
+  }
   if (entry.reviewStatus === "REVIEWED") {
     return { text: "✓ Reviewed", color: "text-green-400" };
   }
