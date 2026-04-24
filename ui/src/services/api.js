@@ -88,15 +88,18 @@ export const authService = {
   },
 };
 
+function authHeaders() {
+  return {
+    Authorization: `Bearer ${authService.getToken()}`,
+    "Content-Type": "application/json",
+  };
+}
+
 export const uploadService = {
   async presignUpload(filename) {
-    const token = authService.getToken();
     const response = await fetch(`${API_ENDPOINT}/uploads/presign`, {
       method: "POST",
-      headers: {
-        Authorization: token,
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         filename,
         contentType: "image/png",
@@ -122,13 +125,9 @@ export const uploadService = {
 export const entriesService = {
   async getEntries() {
     try {
-      const token = authService.getToken();
       const response = await fetch(`${API_ENDPOINT}/entries`, {
         method: "GET",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
       });
 
       if (!response.ok) throw new Error("Failed to fetch entries");
@@ -142,13 +141,9 @@ export const entriesService = {
 
   async getEntry(entryId) {
     try {
-      const token = authService.getToken();
       const response = await fetch(`${API_ENDPOINT}/entries/${entryId}`, {
         method: "GET",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
       });
 
       if (!response.ok) throw new Error("Failed to fetch entry");
@@ -162,13 +157,9 @@ export const entriesService = {
 
   async updateEntryTranscript(entryId, correctedText) {
     try {
-      const token = authService.getToken();
       const response = await fetch(`${API_ENDPOINT}/entries/${entryId}`, {
         method: "PUT",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
         body: JSON.stringify({
           correctedText,
         }),
@@ -184,13 +175,9 @@ export const entriesService = {
 
   async getEntryInsight(entryId) {
     try {
-      const token = authService.getToken();
       const response = await fetch(`${API_ENDPOINT}/entries/${entryId}/insight`, {
         method: "GET",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
       });
       if (!response.ok) throw new Error("Insight not found");
       return await response.json();
@@ -204,16 +191,12 @@ export const entriesService = {
 export const agentsService = {
   async runWeeklyReflection(weekStart, weekEnd) {
     try {
-      const token = authService.getToken();
       const body = {};
       if (weekStart) body.weekStart = weekStart;
       if (weekEnd) body.weekEnd = weekEnd;
       const response = await fetch(`${API_ENDPOINT}/agents/weekly-reflection/run`, {
         method: "POST",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
         body: JSON.stringify(body),
       });
       if (!response.ok) {
