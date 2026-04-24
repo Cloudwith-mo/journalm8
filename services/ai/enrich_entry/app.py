@@ -14,6 +14,7 @@ dynamodb = boto3.resource("dynamodb")
 PROCESSED_BUCKET_NAME = os.environ["PROCESSED_BUCKET_NAME"]
 JOURNAL_ENTRIES_TABLE_NAME = os.environ["JOURNAL_ENTRIES_TABLE_NAME"]
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "bedrock")  # "bedrock" | "mock"
 
 entries_table = dynamodb.Table(JOURNAL_ENTRIES_TABLE_NAME)
 
@@ -56,6 +57,47 @@ class DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, Decimal):
             return int(obj) if obj % 1 == 0 else float(obj)
         return super().default(obj)
+
+
+def _floats_to_decimal(obj):
+    """Recursively convert float values to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    if isinstance(obj, dict):
+        return {k: _floats_to_decimal(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_floats_to_decimal(i) for i in obj]
+    return obj
+
+
+def _mock_insight(text: str) -> Dict:
+    """Returns deterministic mock insight for dev/validation use only.
+    Enabled when AI_PROVIDER=mock. Never set in production Terraform.
+    """
+    words = text.split()[:6] if text else ["journal", "entry"]
+    preview = " ".join(words)
+    return {
+        "summary": f"Mock insight for entry starting: '{preview}...'",
+        "mood": {
+            "primary": "reflective",
+            "secondary": ["curious", "focused"],
+            "confidence": Decimal("0.9"),
+        },
+        "themes": ["personal growth", "daily reflection", "self-awareness"],
+        "sentiment": {"score": Decimal("0.3"), "label": "mixed-positive"},
+        "keyInsights": [
+            "Mock: The entry shows consistent self-reflection patterns.",
+            "Mock: Goals and intentions are clearly articulated.",
+        ],
+        "actionItems": ["Mock: Review progress against weekly goals"],
+        "identitySignals": ["goal-oriented", "self-aware"],
+        "patternsToWatch": ["Mock: Monitor consistency of reflection practice"],
+        "reflectionQuestions": [
+            "Mock: What one thing would make tomorrow better?",
+            "Mock: How does this entry connect to your longer-term goals?",
+        ],
+        "_source": "mock_validation",
+    }
 
 
 def _now_iso() -> str:
@@ -113,47 +155,50 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         _mark_failed(user_sub, entry_id, "NoTranscript", "No transcript text available")
         return {"statusCode": 422, "message": "No transcript text to analyse"}
 
-    # ── 4. Call Bedrock ───────────────────────────────────────────────────────
+    # ── 4. Call AI provider ───────────────────────────────────────────────────
     prompt = ENTRY_INSIGHT_PROMPT.format(text=text_to_analyse)
-    try:
-        bedrock_response = bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 1024,
-                "temperature": 0.3,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
-        )
-        response_body = json.loads(bedrock_response["body"].read())
-        raw_text = response_body["content"][0]["text"].strip()
-    except Exception as e:
-        error_str = str(e)
-        print(f"ERROR: Bedrock invocation failed: {e}")
-        error_code = type(e).__name__
-        # Extract the Botocore error code if available
-        if hasattr(e, "response"):
-            error_code = e.response.get("Error", {}).get("Code", error_code)
-        if "ThrottlingException" in error_str or "TooManyRequests" in error_str:
-            _mark_throttled(user_sub, entry_id, error_code, error_str[:200])
-        else:
-            _mark_failed(user_sub, entry_id, error_code, error_str[:200])
-        return {"statusCode": 500, "message": f"Bedrock error: {error_str}"}
 
-    # ── 5. Parse JSON from model output ───────────────────────────────────────
-    try:
-        # Strip markdown code fences if model added them despite instructions
-        if raw_text.startswith("```"):
-            raw_text = raw_text.split("```")[1]
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:]
-        insight = json.loads(raw_text)
-    except json.JSONDecodeError as e:
-        print(f"ERROR: Could not parse Bedrock JSON response: {e}\nRaw: {raw_text[:500]}")
-        _mark_failed(user_sub, entry_id, "JSONDecodeError", str(e)[:200])
-        return {"statusCode": 500, "message": "Invalid JSON from model"}
+    if AI_PROVIDER == "mock":
+        print(f"INFO: Mock mode — skipping Bedrock for entry {entry_id}")
+        insight = _mock_insight(text_to_analyse)
+    else:
+        try:
+            bedrock_response = bedrock.invoke_model(
+                modelId=BEDROCK_MODEL_ID,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1024,
+                    "temperature": 0.3,
+                    "messages": [{"role": "user", "content": prompt}],
+                }),
+            )
+            response_body = json.loads(bedrock_response["body"].read())
+            raw_text = response_body["content"][0]["text"].strip()
+        except Exception as e:
+            error_str = str(e)
+            print(f"ERROR: Bedrock invocation failed: {e}")
+            error_code = type(e).__name__
+            if hasattr(e, "response"):
+                error_code = e.response.get("Error", {}).get("Code", error_code)
+            if "ThrottlingException" in error_str or "TooManyRequests" in error_str:
+                _mark_throttled(user_sub, entry_id, error_code, error_str[:200])
+            else:
+                _mark_failed(user_sub, entry_id, error_code, error_str[:200])
+            return {"statusCode": 500, "message": f"Bedrock error: {error_str}"}
+
+        # ── 5. Parse JSON from model output ───────────────────────────────────
+        try:
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("```")[1]
+                if raw_text.startswith("json"):
+                    raw_text = raw_text[4:]
+            insight = json.loads(raw_text)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Could not parse Bedrock JSON response: {e}\nRaw: {raw_text[:500]}")
+            _mark_failed(user_sub, entry_id, "JSONDecodeError", str(e)[:200])
+            return {"statusCode": 500, "message": "Invalid JSON from model"}
 
     # ── 6. Store INSIGHT item in DynamoDB ─────────────────────────────────────
     now = _now_iso()
@@ -163,18 +208,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "entityType": "ENTRY_INSIGHT",
         "entryId": entry_id,
         "summary": insight.get("summary", ""),
-        "mood": insight.get("mood", {}),
+        "mood": _floats_to_decimal(insight.get("mood", {})),
         "themes": insight.get("themes", []),
-        "sentiment": insight.get("sentiment", {}),
+        "sentiment": _floats_to_decimal(insight.get("sentiment", {})),
         "keyInsights": insight.get("keyInsights", []),
         "actionItems": insight.get("actionItems", []),
         "identitySignals": insight.get("identitySignals", []),
         "patternsToWatch": insight.get("patternsToWatch", []),
         "reflectionQuestions": insight.get("reflectionQuestions", []),
-        "modelId": BEDROCK_MODEL_ID,
+        "modelId": BEDROCK_MODEL_ID if AI_PROVIDER != "mock" else "mock",
         "promptVersion": "entry-insight-v1",
         "createdAt": now,
     }
+    # Carry _source tag through for mock/seeded items
+    if insight.get("_source"):
+        insight_item["source"] = insight["_source"]
 
     try:
         entries_table.put_item(Item=insight_item)
