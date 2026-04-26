@@ -1,7 +1,7 @@
 # AI Pipeline Validation
 
-**Date:** 2026-04-24  
-**Commit range:** `09dd6d8` → `3d10f49`  
+**Date:** 2026-04-25  
+**Commit range:** `09dd6d8` → current  
 **Environment:** `dev` — `https://iq1gf00t2a.execute-api.us-east-1.amazonaws.com`  
 **Test user:** `f4888488-60f1-7036-27f8-e58899c95154` (`e2e_6576874@journalm8.local`)  
 **Model:** `us.anthropic.claude-3-5-haiku-20241022-v1:0`
@@ -19,7 +19,9 @@
 | Bedrock attempted | ✅ PASS | ThrottlingException after 4 retries — model IS called |
 | FAILED state / retry UI | ✅ PASS | Home badge "AI failed — retry", retry button in detail screen |
 | Retry endpoint | ✅ PASS | QUEUED → ENRICHING → FAILED cycle confirmed |
-| Real Bedrock-generated insight | ⏳ BLOCKED | Rolling daily token quota — retry when quota clears |
+| Mock provider validation | ✅ PASS | 3 entries: `4badde36`, `6339aa73`, `6bacc935` → `COMPLETE` with `source=mock_validation` |
+| Real Bedrock-generated insight | ⏳ BLOCKED | Rolling daily token quota — switch `AI_PROVIDER=bedrock` when quota clears |
+| Weekly Reflection (mock insights) | ⏳ PENDING | 3 COMPLETE entries ready — test next |
 
 ---
 
@@ -46,6 +48,52 @@ POST /entries/{id}/enrich
 GET /entries/{id}/insight
   └─ get_insight Lambda → returns INSIGHT# item
 ```
+
+---
+
+## Mock Provider Mode
+
+**Why it exists:** AWS Bedrock has a rolling daily token quota on new/free-tier accounts.
+Hitting the quota produces `ThrottlingException: Too many tokens per day`, which blocks
+all real-model testing. Mock mode lets the full pipeline run without touching Bedrock.
+
+**How to activate:** Set `AI_PROVIDER=mock` on the Lambda environment variable (either
+via Terraform `ai_provider = "mock"` in dev main.tf, or directly via AWS Console/CLI).
+
+**What it does:**
+- Returns a deterministic synthetic insight tagged `source=mock_validation`
+- Logs `WARNING: AI_PROVIDER=mock` at Lambda cold-start — visible in CloudWatch
+- Stores `modelId=mock` in the INSIGHT# DynamoDB item
+- UI shows a **"Mock insight"** yellow badge in `AiInsightCard`
+- `source=manual_seed_validation` shows an **"Seeded validation"** orange badge
+
+**What it does NOT do:** Call Bedrock, consume any tokens, or produce real analysis.
+
+**Switch back to real Bedrock:**
+```bash
+aws lambda update-function-configuration \
+  --function-name journalm8-dev-enrich-entry \
+  --environment "Variables={
+    JOURNAL_ENTRIES_TABLE_NAME=journalm8-dev-journal-entries,
+    PROCESSED_BUCKET_NAME=journalm8-dev-processed-114743615542-us-east-1,
+    BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0,
+    AI_PROVIDER=bedrock,
+    MAX_INPUT_CHARS=4000,
+    MAX_OUTPUT_TOKENS=600
+  }" --region us-east-1
+```
+
+---
+
+## Token Controls
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MAX_INPUT_CHARS` | `4000` | Truncates transcript before sending to model — reduces token spend |
+| `MAX_OUTPUT_TOKENS` | `600` | `max_tokens` in Bedrock body — was previously hardcoded to 1024 |
+
+For dev testing, `MAX_OUTPUT_TOKENS=600` is sufficient for the full JSON schema.
+Increase to `1024` only if truncated outputs are observed in production.
 
 ---
 

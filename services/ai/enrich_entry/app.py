@@ -13,8 +13,13 @@ dynamodb = boto3.resource("dynamodb")
 
 PROCESSED_BUCKET_NAME = os.environ["PROCESSED_BUCKET_NAME"]
 JOURNAL_ENTRIES_TABLE_NAME = os.environ["JOURNAL_ENTRIES_TABLE_NAME"]
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "bedrock")  # "bedrock" | "mock"
+MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", "4000"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "600"))
+
+if AI_PROVIDER == "mock":
+    print("WARNING: AI_PROVIDER=mock — Bedrock WILL NOT be called. Outputs are synthetic. Do NOT use in production.")
 
 entries_table = dynamodb.Table(JOURNAL_ENTRIES_TABLE_NAME)
 
@@ -155,6 +160,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         _mark_failed(user_sub, entry_id, "NoTranscript", "No transcript text available")
         return {"statusCode": 422, "message": "No transcript text to analyse"}
 
+    # Truncate to configured limit to conserve quota
+    if len(text_to_analyse) > MAX_INPUT_CHARS:
+        print(f"INFO: Truncating transcript from {len(text_to_analyse)} to {MAX_INPUT_CHARS} chars")
+        text_to_analyse = text_to_analyse[:MAX_INPUT_CHARS]
+
     # ── 4. Call AI provider ───────────────────────────────────────────────────
     prompt = ENTRY_INSIGHT_PROMPT.format(text=text_to_analyse)
 
@@ -169,7 +179,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 accept="application/json",
                 body=json.dumps({
                     "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 1024,
+                    "max_tokens": MAX_OUTPUT_TOKENS,
                     "temperature": 0.3,
                     "messages": [{"role": "user", "content": prompt}],
                 }),

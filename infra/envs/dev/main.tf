@@ -118,6 +118,13 @@ module "compute" {
   weekly_reflection_lambda_zip_path = local.weekly_reflection_lambda_zip_path
   retry_enrich_lambda_source_dir    = local.retry_enrich_lambda_source_dir
   retry_enrich_lambda_zip_path      = local.retry_enrich_lambda_zip_path
+
+  # AI provider config — change ai_provider to "mock" for dev validation; default is "bedrock"
+  ai_provider       = "bedrock"
+  bedrock_model_id  = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+  max_input_chars   = 4000
+  max_output_tokens = 600
+
   tags              = local.common_tags
 }
 

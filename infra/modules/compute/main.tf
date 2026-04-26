@@ -415,7 +415,10 @@ resource "aws_lambda_function" "enrich_entry" {
     variables = {
       JOURNAL_ENTRIES_TABLE_NAME = var.journal_entries_table_name
       PROCESSED_BUCKET_NAME      = var.processed_bucket_name
-      BEDROCK_MODEL_ID           = "anthropic.claude-3-haiku-20240307-v1:0"
+      BEDROCK_MODEL_ID           = var.bedrock_model_id
+      AI_PROVIDER                = var.ai_provider
+      MAX_INPUT_CHARS            = tostring(var.max_input_chars)
+      MAX_OUTPUT_TOKENS          = tostring(var.max_output_tokens)
     }
   }
 
@@ -586,7 +589,10 @@ resource "aws_lambda_function" "weekly_reflection" {
   environment {
     variables = {
       JOURNAL_ENTRIES_TABLE_NAME = var.journal_entries_table_name
-      BEDROCK_MODEL_ID           = "anthropic.claude-3-haiku-20240307-v1:0"
+      BEDROCK_MODEL_ID           = var.bedrock_model_id
+      AI_PROVIDER                = var.ai_provider
+      MAX_INPUT_CHARS            = tostring(var.max_input_chars)
+      MAX_OUTPUT_TOKENS          = tostring(var.max_output_tokens)
     }
   }
 

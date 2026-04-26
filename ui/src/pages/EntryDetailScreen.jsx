@@ -2,15 +2,29 @@ import { useState, useEffect } from "react";
 import { entriesService } from "../services/api";
 
 function AiInsightCard({ insight }) {
+  const sourceBadge =
+    insight.source === "mock_validation"
+      ? { label: "Mock insight", color: "bg-yellow-700 text-yellow-200" }
+      : insight.source === "manual_seed_validation"
+      ? { label: "Seeded validation", color: "bg-orange-800 text-orange-200" }
+      : null;
+
   return (
     <div className="bg-gray-800 rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-purple-300">✦ AI Insight</h3>
-        {insight.mood?.primary && (
-          <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">
-            {insight.mood.primary}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {sourceBadge && (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${sourceBadge.color}`}>
+              {sourceBadge.label}
+            </span>
+          )}
+          {insight.mood?.primary && (
+            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">
+              {insight.mood.primary}
+            </span>
+          )}
+        </div>
       </div>
 
       {insight.summary && (
