@@ -21,7 +21,7 @@
 | Retry endpoint | ✅ PASS | QUEUED → ENRICHING → FAILED cycle confirmed |
 | Mock provider validation | ✅ PASS | 3 entries: `4badde36`, `6339aa73`, `6bacc935` → `COMPLETE` with `source=mock_validation` |
 | Real Bedrock-generated insight | ⏳ BLOCKED | Rolling daily token quota — switch `AI_PROVIDER=bedrock` when quota clears |
-| Weekly Reflection (mock insights) | ⏳ PENDING | 3 COMPLETE entries ready — test next |
+| Weekly Reflection mock mode | ⏳ PENDING | Lambda updated — run validation command below |
 
 ---
 
@@ -219,15 +219,60 @@ aws lambda invoke \
 **Expected:** `{"statusCode": 200, ..., "aiStatus": "QUEUED"}`  
 **Then:** DynamoDB shows `ENRICHING` within ~2s, then `COMPLETE` or `THROTTLED`/`FAILED`
 
+### Test Weekly Reflection Lambda (mock mode)
+
+```bash
+aws lambda invoke \
+  --function-name journalm8-dev-weekly-reflection \
+  --payload '{
+    "requestContext":{"authorizer":{"jwt":{"claims":{"sub":"f4888488-60f1-7036-27f8-e58899c95154"}}}},
+    "body":"{\"weekStart\":\"2026-01-01\",\"weekEnd\":\"2026-12-31\"}"
+  }' \
+  --cli-binary-format raw-in-base64-out \
+  --region us-east-1 /tmp/reflection_result.json && cat /tmp/reflection_result.json
+```
+
+**Expected response body:**
+```json
+{
+  "weekId": "...",
+  "weekStart": "2026-01-01",
+  "weekEnd": "2026-12-31",
+  "entryCount": 3,
+  "weeklySummary": "Mock weekly reflection for 3 entries...",
+  "dominantThemes": ["personal growth", ...],
+  "wins": [...],
+  "struggles": [...],
+  ...
+}
+```
+
+**Verify DynamoDB REFLECTION# item:**
+```bash
+aws dynamodb query \
+  --table-name journalm8-dev-journal-entries \
+  --key-condition-expression "pk = :pk AND begins_with(sk, :prefix)" \
+  --expression-attribute-values '{
+    ":pk":{"S":"USER#f4888488-60f1-7036-27f8-e58899c95154"},
+    ":prefix":{"S":"REFLECTION#WEEK#"}
+  }' \
+  --region us-east-1 \
+  --query 'Items[*].{sk:sk.S, weekId:weekId.S, entryCount:entryCount.N, modelId:modelId.S, source:source.S, createdAt:createdAt.S}'
+```
+
+**Expected:** `modelId=mock`, `source=mock_validation`, `entryCount=3`
+
 ---
 
 ## Remaining Steps
 
-1. **Bedrock quota clears** → click "↺ Retry AI Analysis" on any `THROTTLED`/`FAILED` entry
-2. Confirm cycle: `QUEUED → ENRICHING → COMPLETE`
-3. Confirm `INSIGHT#<entryId>` created by model (not seeded)
-4. Confirm `GET /entries/{entryId}/insight` returns 200 with model-generated content
-5. Confirm UI auto-renders real AI Insight card
+1. **Weekly Reflection mock test** → run command above; confirm `REFLECTION#WEEK#` created
+2. **Bedrock quota clears** → set `ai_provider = "bedrock"` in [infra/envs/dev/main.tf](infra/envs/dev/main.tf) and run `terraform apply`
+3. Click "↺ Retry AI Analysis" on any `THROTTLED`/`FAILED` entry
+4. Confirm cycle: `QUEUED → ENRICHING → COMPLETE`
+5. Confirm `INSIGHT#<entryId>` created by model (not seeded, no source badge in UI)
+6. Confirm `GET /entries/{entryId}/insight` returns 200 with model-generated content
+7. Run Weekly Reflection again with `AI_PROVIDER=bedrock` to validate real model output
 6. After 2–3 entries have `COMPLETE` insights, test **Weekly Reflection**:
    - POST `/agents/weekly-reflection/run`
    - Confirm `REFLECTION#WEEK#<weekId>` created in DynamoDB

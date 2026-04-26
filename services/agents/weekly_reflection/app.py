@@ -12,7 +12,13 @@ bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION
 dynamodb = boto3.resource("dynamodb")
 
 JOURNAL_ENTRIES_TABLE_NAME = os.environ["JOURNAL_ENTRIES_TABLE_NAME"]
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "bedrock")  # "bedrock" | "mock"
+MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", "4000"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "600"))
+
+if AI_PROVIDER == "mock":
+    print("WARNING: AI_PROVIDER=mock — Bedrock WILL NOT be called. Outputs are synthetic. Do NOT use in production.")
 
 entries_table = dynamodb.Table(JOURNAL_ENTRIES_TABLE_NAME)
 
@@ -56,6 +62,32 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _mock_weekly_reflection(week_start: str, week_end: str, entry_count: int) -> Dict:
+    """Deterministic mock weekly reflection for dev/validation use only.
+    Enabled when AI_PROVIDER=mock. Never set in production Terraform.
+    """
+    return {
+        "weeklySummary": (
+            f"Mock weekly reflection for {entry_count} entr{'y' if entry_count == 1 else 'ies'} "
+            f"from {week_start} to {week_end}. "
+            "This is synthetic output for pipeline validation only."
+        ),
+        "dominantThemes": ["personal growth", "daily reflection", "self-awareness"],
+        "wins": ["Mock: Consistently documented the week", "Mock: Completed daily check-ins"],
+        "struggles": ["Mock: Maintaining focus amid distractions"],
+        "emotionalPattern": "Mock: Mood trended from reflective early in the week to motivated by week's end.",
+        "identityPattern": "Mock: This writer is developing consistent self-reflection habits.",
+        "repeatedLoop": "Mock: Returning to themes of focus and intention-setting.",
+        "recommendedFocus": "Mock: Identify one concrete goal to carry from this week into next week.",
+        "reflectionQuestions": [
+            "Mock: What surprised you most about this week?",
+            "Mock: What would you do differently if you could replay the week?",
+            "Mock: What habit, if sustained, would most improve next week?",
+        ],
+        "_source": "mock_validation",
+    }
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -129,40 +161,49 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # ── 4. Build entry_summaries block for the prompt ─────────────────────
         summaries_text = _build_summaries(reviewed_entries, insight_map)
 
-        # ── 5. Call Bedrock ───────────────────────────────────────────────────
-        prompt = WEEKLY_REFLECTION_PROMPT.format(
-            week_start=week_start,
-            week_end=week_end,
-            entry_summaries=summaries_text,
-        )
-        try:
-            bedrock_response = bedrock.invoke_model(
-                modelId=BEDROCK_MODEL_ID,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 1024,
-                    "temperature": 0.4,
-                    "messages": [{"role": "user", "content": prompt}],
-                }),
-            )
-            response_body = json.loads(bedrock_response["body"].read())
-            raw_text = response_body["content"][0]["text"].strip()
-        except Exception as e:
-            print(f"ERROR: Bedrock invocation failed: {e}")
-            return _response(500, {"message": f"Bedrock error: {str(e)}"})
+        # Truncate to conserve quota
+        if len(summaries_text) > MAX_INPUT_CHARS:
+            print(f"INFO: Truncating summaries_text from {len(summaries_text)} to {MAX_INPUT_CHARS} chars")
+            summaries_text = summaries_text[:MAX_INPUT_CHARS]
 
-        # ── 6. Parse JSON ──────────────────────────────────────────────────────
-        try:
-            if raw_text.startswith("```"):
-                raw_text = raw_text.split("```")[1]
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:]
-            reflection = json.loads(raw_text)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Could not parse reflection JSON: {e}\nRaw: {raw_text[:500]}")
-            return _response(500, {"message": "Invalid JSON from model"})
+        # ── 5. Call AI provider ───────────────────────────────────────────────
+        if AI_PROVIDER == "mock":
+            print(f"INFO: Mock mode — skipping Bedrock for weekly reflection week {week_id}")
+            reflection = _mock_weekly_reflection(week_start, week_end, len(reviewed_entries))
+        else:
+            prompt = WEEKLY_REFLECTION_PROMPT.format(
+                week_start=week_start,
+                week_end=week_end,
+                entry_summaries=summaries_text,
+            )
+            try:
+                bedrock_response = bedrock.invoke_model(
+                    modelId=BEDROCK_MODEL_ID,
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps({
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "max_tokens": MAX_OUTPUT_TOKENS,
+                        "temperature": 0.4,
+                        "messages": [{"role": "user", "content": prompt}],
+                    }),
+                )
+                response_body = json.loads(bedrock_response["body"].read())
+                raw_text = response_body["content"][0]["text"].strip()
+            except Exception as e:
+                print(f"ERROR: Bedrock invocation failed: {e}")
+                return _response(500, {"message": f"Bedrock error: {str(e)}"})
+
+            # ── 6. Parse JSON ─────────────────────────────────────────────────
+            try:
+                if raw_text.startswith("```"):
+                    raw_text = raw_text.split("```")[1]
+                    if raw_text.startswith("json"):
+                        raw_text = raw_text[4:]
+                reflection = json.loads(raw_text)
+            except json.JSONDecodeError as e:
+                print(f"ERROR: Could not parse reflection JSON: {e}\nRaw: {raw_text[:500]}")
+                return _response(500, {"message": "Invalid JSON from model"})
 
         # ── 7. Store REFLECTION item in DynamoDB ──────────────────────────────
         now = _now_iso()
@@ -183,9 +224,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "repeatedLoop": reflection.get("repeatedLoop", ""),
             "recommendedFocus": reflection.get("recommendedFocus", ""),
             "reflectionQuestions": reflection.get("reflectionQuestions", []),
-            "modelId": BEDROCK_MODEL_ID,
+            "modelId": "mock" if AI_PROVIDER == "mock" else BEDROCK_MODEL_ID,
             "createdAt": now,
         }
+        if reflection.get("_source"):
+            reflection_item["source"] = reflection["_source"]
 
         entries_table.put_item(Item=reflection_item)
         print(f"INFO: Weekly reflection created for user {user_sub}, week {week_id}")
